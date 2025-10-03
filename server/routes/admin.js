@@ -3,6 +3,7 @@ const multer = require('multer');
 const fs = require('fs').promises;
 const path = require('path');
 const rustEngine = require('../utils/rustEngine');
+const resultCacheManager = require('../utils/resultCacheManager');
 const { ValidationError } = require('../middleware/errorHandler');
 const winston = require('winston');
 
@@ -107,15 +108,88 @@ router.delete('/files', async (req, res, next) => {
   }
 });
 
+// Get cache statistics
+router.get('/cache/stats', async (req, res, next) => {
+  try {
+    const stats = await resultCacheManager.getCacheStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Clear all caches (same as cleanup endpoint)
+router.delete('/cache', async (req, res, next) => {
+  try {
+    const cleanedCount = await resultCacheManager.cleanupAllCaches();
+    
+    logger.info(`Cleared ${cleanedCount} cached result directories`);
+    
+    res.json({
+      success: true,
+      data: {
+        message: `Cleared ${cleanedCount} cached result directories`,
+        removedCount: cleanedCount
+      }
+    });
+
+  } catch (error) {
+    logger.error('Failed to clear caches:', error);
+    
+    // Check if it's a directory not found error
+    if (error.code === 'ENOENT') {
+      res.json({
+        success: true,
+        data: {
+          message: 'Cache directory does not exist or is already clean',
+          removedCount: 0
+        }
+      });
+    } else {
+      next(error);
+    }
+  }
+});
+
+// Perform manual cleanup of all caches
+router.post('/cache/cleanup', async (req, res, next) => {
+  try {
+    const cleanedCount = await resultCacheManager.cleanupAllCaches();
+    
+    logger.info(`Manual cache cleanup completed - removed ${cleanedCount} cached results`);
+    
+    res.json({
+      success: true,
+      data: {
+        message: `Manual cache cleanup completed - removed ${cleanedCount} cached results`,
+        cleanedCount
+      }
+    });
+
+  } catch (error) {
+    logger.error('Failed to perform cache cleanup:', error);
+    next(error);
+  }
+});
+
 // Get system status
 router.get('/status', async (req, res, next) => {
   try {
-    const status = await rustEngine.getStatus();
+    const [status, cacheStats] = await Promise.all([
+      rustEngine.getStatus(),
+      resultCacheManager.getCacheStats()
+    ]);
     
     res.json({
       success: true,
       data: {
         ...status,
+        cache: cacheStats,
         server: {
           uptime: process.uptime(),
           memory: process.memoryUsage(),

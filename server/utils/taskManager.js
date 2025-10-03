@@ -1,4 +1,5 @@
 const { ServerTaskError } = require('../middleware/errorHandler');
+const resultCacheManager = require('./resultCacheManager');
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -6,15 +7,14 @@ class TaskManager {
   constructor() {
     this.tasks = new Map();
     this.taskIdCounter = 1;
-    this.cleanupInterval = 24 * 60 * 60 * 1000; // Clean completed tasks after 24 hours
     this.tasksDir = path.join(__dirname, '../data/tasks');
     this.tasksFile = path.join(this.tasksDir, 'tasks.json');
     
     // Initialize data directory and load tasks
     this.initializePersistence();
     
-    // Start cleanup interval
-    setInterval(() => this.cleanupCompletedTasks(), this.cleanupInterval);
+    // Tasks persist forever - no automatic cleanup
+    console.log('TaskManager: Tasks will persist indefinitely (no automatic cleanup)');
   }
 
   async initializePersistence() {
@@ -174,22 +174,11 @@ class TaskManager {
   }
 
   async cleanupCompletedTasks() {
-    const cutoffTime = Date.now() - this.cleanupInterval;
-    let removedCount = 0;
-    
-    for (const [taskId, task] of this.tasks.entries()) {
-      if ((task.status === 'completed' || task.status === 'failed') && 
-          task.completed && task.completed.getTime() < cutoffTime) {
-        this.tasks.delete(taskId);
-        removedCount++;
-      }
-    }
-    
-    if (removedCount > 0) {
-      console.log(`TaskManager: Cleaned up ${removedCount} old tasks`);
-      await this.saveTasksToDisk();
-    }
+    // Manual cleanup only - no automatic task cleanup to preserve all tasks forever
+    console.log('TaskManager: Manual task cleanup requested (tasks normally persist forever)');
+    return 0;
   }
+
 
   estimateTaskDuration(taskType, params = {}) {
     // Estimate duration based on task type and parameters

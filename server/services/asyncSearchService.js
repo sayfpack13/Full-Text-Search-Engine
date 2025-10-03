@@ -1,5 +1,6 @@
 const rustEngine = require('../utils/rustEngine');
 const taskManager = require('../utils/taskManager');
+const resultCacheManager = require('../utils/resultCacheManager');
 const winston = require('winston');
 
 const logger = winston.createLogger({
@@ -19,6 +20,8 @@ class AsyncSearchService {
           result: { query, limit, offset }
         });
       }
+
+      // Proceed directly with search - results will be saved to .txt file during execution
 
       // Get file statistics first
       let stats;
@@ -73,8 +76,9 @@ class AsyncSearchService {
         });
       }
 
-      // Execute the actual search
-      const results = await rustEngine.search(query.trim(), limit, offset);
+      // Execute search to get ALL results (not paginated) for saving
+      logger.info(`Executing full search for saving: "${query}"`);
+      const allResults = await rustEngine.search(query.trim(), 10000, 0); // Get up to 10k results
 
       // Clear progress interval if it was set
       if (progressInterval) {
@@ -83,9 +87,28 @@ class AsyncSearchService {
 
       // Extract relevant progress information
       const filesSearched = stats.total_documents || 1;
-      const resultsFound = results.results?.length || 0;
+      const totalResults = allResults.total || 0;
       
-      // Complete the task with metadata only (no full results for scalability)
+      // Save results to text file if we have results
+      let savedFilePath = null;
+      if (totalResults > 0 && taskId) {
+        try {
+          savedFilePath = await resultCacheManager.cacheResults(
+            query.trim(), 
+            allResults.results || [], 
+            totalResults,
+            taskId
+          );
+          logger.info(`Successfully saved ${totalResults} results to ${savedFilePath}`);
+        } catch (saveError) {
+          logger.error('Failed to save results:', saveError.message);
+        }
+      }
+      
+      // Return paginated results from search results
+      const paginatedResults = (allResults.results || []).slice(offset, offset + limit);
+      
+      // Complete the task with saved results info
       if (taskId) {
         await taskManager.updateTaskStatus(taskId, 'completed', {
           progress: 100,
@@ -93,40 +116,35 @@ class AsyncSearchService {
           operation: 'Search completed successfully',
           result: {
             query: query.trim(),
-            // Store only metadata, not full results
-            total: results.total || 0,
+            total: totalResults,
             filesSearched,
-            resultsFound,
+            resultsFound: paginatedResults.length,
             executionTime: Date.now(),
-            searchDuration: (Date.now() - Date.now()),
+            searchDuration: 0,
             limit,
             offset,
-            // Lazy loading flag
-            lazyLoad: true,
-            // Store search parameters for re-execution when needed
-            searchParams: { 
-              query: query.trim(), 
-              originalLimit: limit, 
-              originalOffset: offset 
-            }
+            saved: !!savedFilePath,
+            resultsFile: savedFilePath,
+            totalSaved: totalResults
           }
         });
       }
 
-      logger.info(`Async search completed for query: "${query}" - Found ${resultsFound} results`);
+      logger.info(`Async search completed for query: "${query}" - Found ${totalResults} total results (saved: ${!!savedFilePath})`);
       
       return {
         success: true,
         taskId,
         data: {
           query: query.trim(),
-          results: results.results || [],
-          total: results.total || 0,
+          results: paginatedResults,
+          total: totalResults,
           filesSearched,
-          resultsFound,
+          resultsFound: paginatedResults.length,
           executionTime: Date.now(),
           limit,
-          offset
+          offset,
+          saved: !!savedFilePath
         }
       };
 

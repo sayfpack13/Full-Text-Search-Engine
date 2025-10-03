@@ -1,6 +1,7 @@
 const express = require('express');
 const taskManager = require('../utils/taskManager');
 const asyncSearchService = require('../services/asyncSearchService');
+const resultCacheManager = require('../utils/resultCacheManager');
 const { ValidationError, ServerTaskError } = require('../middleware/errorHandler');
 const winston = require('winston');
 
@@ -161,39 +162,42 @@ router.get('/:taskId/results', async (req, res, next) => {
       throw new ValidationError('Task must be completed to fetch results', 'status');
     }
     
-    if (!task.result?.lazyLoad) {
-      // Legacy task with results already loaded, return existing results
-      const results = task.result.results || [];
+    // Try to load from saved text file first
+    const cachedResults = await resultCacheManager.loadCachedResultsByTaskId(taskId, parseInt(limit), parseInt(offset));
+    
+    if (cachedResults) {
+      logger.info(`Loading saved results from text file for task ${taskId}`);
       return res.json({
         success: true,
         data: {
-          results: results.slice(parseInt(offset), parseInt(offset) + parseInt(limit)),
-          total: task.result.total || results.length,
+          results: cachedResults.results,
+          total: cachedResults.total,
           offset: parseInt(offset),
           limit: parseInt(limit),
-          cached: true
+          cached: true,
+          sourceFile: cachedResults.sourceFile,
+          taskId: taskId
         }
       });
     }
     
-    // New lazy-loaded task - re-execute search
-    const searchParams = task.result.searchParams;
+    // Fallback: re-execute search if no saved file found
+    logger.info(`No saved results found for task ${taskId}, re-executing search`);
+    const query = task.result.query || task.result.searchParams?.query;
+    if (!query) {
+      throw new ValidationError('Task query not found', 'query');
+    }
+    
     const rustEngine = require('../utils/rustEngine');
     
-    logger.info(`Lazy loading results for task ${taskId}: "${searchParams.query}"`);
-    
     // Execute search with requested pagination
-    const searchResults = await rustEngine.search(
-      searchParams.query, 
-      parseInt(limit), 
-      parseInt(offset)
-    );
+    const searchResults = await rustEngine.search(query, parseInt(limit), parseInt(offset));
     
     res.json({
       success: true,
       data: {
         results: searchResults.results || [],
-        total: task.result.total || searchResults.total || 0, // Use saved total from task
+        total: task.result.total || searchResults.total || 0,
         offset: parseInt(offset),
         limit: parseInt(limit),
         cached: false,

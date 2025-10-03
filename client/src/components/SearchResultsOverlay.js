@@ -804,8 +804,8 @@ if (typeof window !== 'undefined') {
   // Add event listeners
   const closeButtons = [
     document.getElementById('close-dialog'),
-    document.getElementById('close-dialog-footer'),
-    document.getElementById('search-results-backdrop')
+    document.getElementById('close-dialog-footer')
+    // Removed 'search-results-backdrop' to prevent closing on outside click
   ];
   
   closeButtons.forEach(button => {
@@ -813,6 +813,21 @@ if (typeof window !== 'undefined') {
       button.addEventListener('click', () => {
         window.searchResultsActions.hideResults();
       });
+    }
+  });
+
+  // Prevent dialog content clicks from closing the dialog
+  const dialogElement = document.getElementById('search-results-dialog');
+  if (dialogElement) {
+    dialogElement.addEventListener('click', (event) => {
+      event.stopPropagation(); // Prevent event bubbling to backdrop
+    });
+  }
+
+  // Add ESC key support for closing dialog
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && window.searchResultsState.isVisible) {
+      window.searchResultsActions.hideResults();
     }
   });
   
