@@ -116,7 +116,7 @@ class AsyncSearchService {
       }
 
       // Extract relevant progress information
-      const filesSearched = stats.total_documents || 1;
+      const filesSearched = allResults.stats?.total_documents || 1;
       const totalResults = allResults.total || 0;
       
       // Results already saved progressively during streaming search
@@ -226,6 +226,7 @@ class AsyncSearchService {
       let currentOffset = offset;
       let hasMore = true;
       let totalFound = 0;
+      let searchStats = null; // Store stats from search results
       
       // Starting streaming search
       
@@ -259,9 +260,10 @@ class AsyncSearchService {
         totalFound += batchResults.results.length;
         currentOffset += batchSize;
         
-        // Update total if this is the first batch
+        // Update total and capture stats from first batch
         if (currentOffset === offset + batchSize) {
           totalFound = batchResults.total || batchResults.length;
+          searchStats = batchResults.stats; // Capture stats from search results
         }
         
           // Broadcast results as they're found
@@ -321,7 +323,7 @@ class AsyncSearchService {
               totalFound,
               saved: true,
               progressiveResultsPath: finalPath,
-              filesSearched: stats?.total_documents || 1
+              filesSearched: searchStats?.total_documents || 1
             }
           });
           
@@ -334,7 +336,8 @@ class AsyncSearchService {
         query,
         total: totalFound,
         limit: offset + totalFound,
-        offset
+        offset,
+        stats: searchStats
       };
       
     } catch (error) {

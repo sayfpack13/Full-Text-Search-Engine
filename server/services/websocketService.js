@@ -17,12 +17,15 @@ class WebSocketService {
   initialize(server, options = {}) {
     this.io = new Server(server, {
       cors: {
-        origin: process.env.NODE_ENV === 'production' 
-          ? process.env.CORS_ORIGIN || "http://localhost:3000"
-          : "http://localhost:3000",
-        methods: ["GET", "POST"],
-        credentials: true
+        origin: true, // Allow all origins
+        methods: ["GET", "POST", "OPTIONS"],
+        credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
       },
+      allowEIO3: true,
+      transports: ['websocket', 'polling'],
+      pingTimeout: 60000,
+      pingInterval: 25000,
       ...options
     });
 
