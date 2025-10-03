@@ -1,0 +1,7 @@
+node_modules
+data
+searches
+logs
+rust-search-engine/target
+rust-search-engine/Cargo.lock
+package-lock.json
