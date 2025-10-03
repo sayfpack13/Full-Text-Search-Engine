@@ -49,7 +49,7 @@ export const taskStateManager = {
   saveLiveTaskId(taskId) {
     try {
       localStorage.setItem(LIVE_TASK_KEY, taskId);
-      console.log(`Saved live task ID: ${taskId}`);
+      // Saved live task ID
     } catch (error) {
       console.error('Failed to save live task ID:', error);
     }
@@ -70,7 +70,7 @@ export const taskStateManager = {
   clearLiveTaskId() {
     try {
       localStorage.removeItem(LIVE_TASK_KEY);
-      console.log('Cleared live task ID');
+      // Cleared live task ID
     } catch (error) {
       console.error('Failed to clear live task ID:', error);
     }
@@ -81,7 +81,7 @@ export const taskStateManager = {
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(LIVE_TASK_KEY);
-      console.log('Cleared all running tasks');
+      // Cleared all running tasks
     } catch (error) {
       console.error('Failed to clear running tasks:', error);
     }

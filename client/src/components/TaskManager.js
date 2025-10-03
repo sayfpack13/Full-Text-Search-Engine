@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { useWebSocket, useTaskSubscription } from '../hooks/useWebSocket';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { useMultiTaskSubscription, useTaskData } from '../hooks/useMultiTaskSubscription';
 import { useTaskPersistence } from '../hooks/useTaskPersistence';
 import { 
   Play, 
@@ -26,7 +27,10 @@ import LiveResultsDialog from './LiveResultsDialog';
 
 
 // Compact Task Card Component
-const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResultsPage, formatTimestamp, setTaskResultPage, onOpenDialog, liveTaskId }) => {
+const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResultsPage, formatTimestamp, setTaskResultPage, onOpenDialog, taskUpdates, taskResults }) => {
+  // Get live data for this specific task
+  const liveData = taskUpdates[task.id] || {};
+  const isCurrentlyTracked = Object.keys(taskUpdates).includes(task.id);
   const getStatusIcon = (status) => {
     switch (status) {
       case 'pending':
@@ -67,7 +71,7 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
           </span>
           <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(task.status)}`}>
             {task.status}
-            {task.id === liveTaskId && task.status === 'running' && (
+            {isCurrentlyTracked && task.status === 'running' && (
               <span className="ml-1 text-xs bg-green-200 text-green-800 px-1 rounded">
                 LIVE
               </span>
@@ -99,7 +103,7 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
               onClick={() => onOpenDialog(task)}
               className={`px-3 py-1 text-xs rounded-full hover:bg-opacity-80 transition-colors flex items-center space-x-1 font-medium shadow-sm ${
                 task.status === 'running' 
-                  ? (task.id === liveTaskId 
+                  ? (isCurrentlyTracked 
                       ? 'bg-green-100 text-green-700' 
                       : 'bg-orange-100 text-orange-700')
                   : task.status === 'failed' && task.result?.saved
@@ -112,7 +116,7 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
               <Eye className="h-3 w-3" />
               <span>
                 {task.status === 'running' 
-                  ? (task.id === liveTaskId ? 'View Live Results' : 'View Live Preview')
+                  ? (isCurrentlyTracked ? 'View Live Results' : 'View Live Preview')
                   : task.status === 'failed' && task.result?.saved 
                   ? 'View Saved Results' 
                   : task.status === 'failed'
@@ -122,15 +126,15 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
               </span>
               <span className={`px-1 py-0.5 rounded text-xs ${
                 task.status === 'running'
-                  ? (task.id === liveTaskId ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800')
+                  ? (isCurrentlyTracked ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800')
                   : task.status === 'failed' && task.result?.saved
                   ? 'bg-yellow-200 text-yellow-800'
                   : task.status === 'failed'
                   ? 'bg-gray-200 text-gray-600'
                   : 'bg-blue-200 text-blue-800'
               }`}>
-                {task.result.total || task.result.resultsFound || task.result.results?.length || 0}
-                {task.status === 'running' && task.id === liveTaskId && (
+                {isCurrentlyTracked && liveData.resultsCount ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)}
+                {isCurrentlyTracked && task.status === 'running' && (
                   <span className="ml-1 animate-pulse">🔴</span>
                 )}
               </span>
@@ -152,7 +156,10 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
             <div className="flex items-center space-x-2">
               <TrendingUp className="h-3 w-3 text-green-500" />
               <span className="text-gray-600">
-                {task.result.total || task.result.resultsFound || task.result.results?.length || 0} matches found
+                {isCurrentlyTracked && liveData.resultsCount ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)} matches found
+                {isCurrentlyTracked && task.status === 'running' && (
+                  <span className="ml-1 text-xs text-green-600 animate-pulse">🔴 LIVE</span>
+                )}
               </span>
             </div>
             <div className="flex items-center space-x-2">
@@ -265,7 +272,13 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
   const [resultPages, setResultPages] = useState({}); // Track pagination for each task
   const [selectedTaskForResults, setSelectedTaskForResults] = useState(null);
   const [showResultsPanel, setShowResultsPanel] = useState(false);
-  const [liveTaskId, setLiveTaskId] = useState(null); // Track which task is being monitored
+  const [liveTaskId, setLiveTaskId] = useState(null); // Track which task is currently monitored
+  
+  // Get all running task IDs for status checking (memoized to prevent unnecessary re-renders)
+  const runningTaskIds = useMemo(() => 
+    tasks.filter(task => task.status === 'running').map(task => task.id),
+    [tasks]
+  );
   
   // WebSocket connection
   const { socket, connected } = useWebSocket();
@@ -280,74 +293,87 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
     shouldAutoTrackTask
   } = useTaskPersistence(socket, connected, tasks);
   
-  // Real-time task updates
+  
+  // Real-time multi-task updates for ALL running tasks
   const {
-    taskData: liveTaskData,
-    liveResults,
-    progress: liveProgress,
-    operation: liveOperation,
-    error: liveError,
-    isCompleted: liveIsCompleted
-  } = useTaskSubscription(socket, liveTaskId);
+    taskUpdates: allTaskUpdates,
+    liveResults: allLiveResults,
+    connected: multiTaskConnected,
+    getTaskUpdate,
+    getTaskResults,
+    isTaskTracked
+  } = useMultiTaskSubscription(socket, runningTaskIds);
   
 
   useEffect(() => {
     fetchTasks();
   }, []);
 
-  // Auto-track tasks on mount/refresh
+  // Auto-track all running tasks on mount/refresh (only log once per session)
+  const [hasLoggedAutoTrack, setHasLoggedAutoTrack] = useState(false);
   useEffect(() => {
-    if (hasRestoredTasks && tasks.length > 0) {
-      // Check if we have a running search task to auto-track
-      const runningSearchTask = tasks.find(task => 
-        shouldAutoTrackTask(task)
-      );
+    if (hasRestoredTasks && tasks.length > 0 && !hasLoggedAutoTrack) {
+      const runningSearchTasks = tasks.filter(task => shouldAutoTrackTask(task));
       
-      if (runningSearchTask && !liveTaskId) {
-        // Auto-tracking running task
-        setLiveTaskId(runningSearchTask.id);
-        saveLiveTaskId(runningSearchTask.id);
-        toast.success(`Auto-tracking running task: "${runningSearchTask.params?.query}"`);
+      if (runningSearchTasks.length > 0) {
+        // All running tasks are now automatically tracked via multi-task subscription
+        // Auto-tracking running tasks
+        setHasLoggedAutoTrack(true);
       }
     }
-  }, [hasRestoredTasks, tasks, shouldAutoTrackTask, liveTaskId, saveLiveTaskId]);
+  }, [hasRestoredTasks, tasks, shouldAutoTrackTask, hasLoggedAutoTrack]);
 
-  // Effect to sync live task data with tasks state
+  // Effect to sync multi-task live data with tasks state
   useEffect(() => {
-    if (liveTaskData && liveTaskId) {
+    if (Object.keys(allTaskUpdates).length > 0) {
+      // Syncing task updates
+      
       setTasks(prevTasks => {
-        return prevTasks.map(task => 
-          task.id === liveTaskId 
-            ? {
+        const updatedTasks = prevTasks.map(task => {
+          const taskUpdate = allTaskUpdates[task.id];
+          if (taskUpdate && task.status === 'running') {
+            // Only update if there's actually a change
+            const hasProgressChange = taskUpdate.progress !== undefined && taskUpdate.progress !== task.progress;
+            const hasOperationChange = taskUpdate.operation && taskUpdate.operation !== task.operation;
+            const hasResultsChange = taskUpdate.resultsCount !== undefined && taskUpdate.resultsCount !== (task.result?.resultsFound || 0);
+            const hasStatusChange = (taskUpdate.failed || taskUpdate.completed) !== (task.status === 'failed' || task.completed);
+            
+            if (hasProgressChange || hasOperationChange || hasResultsChange || hasStatusChange) {
+              return {
                 ...task,
-                progress: liveProgress,
-                operation: liveOperation,
-                status: liveIsCompleted ? 
-                  (liveError ? 'failed' : 'completed') : 
-                  (liveTaskData.status || task.status),
-                result: liveTaskData.result || task.result,
-                error: liveError || task.error,
-                completed: liveIsCompleted ? new Date().toISOString() : task.completed
-              }
-            : task
+                progress: taskUpdate.progress || task.progress,
+                operation: taskUpdate.operation || task.operation,
+                status: taskUpdate.failed ? 'failed' : (taskUpdate.completed ? 'completed' : task.status),
+                result: {
+                  ...task.result,
+                  resultsFound: taskUpdate.resultsCount || task.result?.resultsFound || 0,
+                  total: taskUpdate.resultsCount || task.result?.total || 0
+                },
+                error: taskUpdate.error || task.error,
+                completed: taskUpdate.completed ? new Date().toISOString() : task.completed
+              };
+            }
+          }
+          return task;
+        });
+        
+        // Only trigger re-render if something actually changed
+        const hasChanges = updatedTasks.some((task, index) => 
+          JSON.stringify(task) !== JSON.stringify(prevTasks[index])
         );
+        
+        return hasChanges ? updatedTasks : prevTasks;
       });
     }
-  }, [liveTaskData, liveProgress, liveOperation, liveError, liveIsCompleted, liveTaskId]);
+  }, [allTaskUpdates]); // Removed 'tasks' to prevent infinite loop
 
-  // Effect to stop monitoring when task completes
-  useEffect(() => {
-    if (liveIsCompleted && liveTaskId) {
-      // Stop monitoring this task after 5 seconds
-      setTimeout(() => {
-        setLiveTaskId(null);
-        clearLiveTaskId();
-        if (connected) {
-          toast.success('Task completed! Live monitoring stopped.');
-        }
-      }, 5000);
-    }
-  }, [liveIsCompleted, liveTaskId, connected, clearLiveTaskId]);
+  // Multi-task completion is handled automatically by useMultiTaskSubscription
+  // No need for individual task completion effects
+  
+  // Helper functions for accessing multi-task data in main component  
+  const isTaskCurrentlyTracked = (taskId) => isTaskTracked(taskId);
+  const getTaskLiveResults = (taskId) => getTaskResults(taskId);
+  const getTaskLiveData = (taskId) => getTaskUpdate(taskId);
 
   useEffect(() => {
     let interval;
@@ -407,11 +433,10 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      toast.success('Search task started!');
+      toast.success(`Search started: "${activeSearchQuery}"`);
       setActiveSearchQuery('');
       
-      // Start monitoring this task in real-time
-      setLiveTaskId(response.data.data.taskId);
+      // Task automatically tracked via multi-task subscription
       saveLiveTaskId(response.data.data.taskId);
       
       // Refresh tasks after starting
@@ -455,11 +480,8 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
         )
       );
 
-      // Clear live task tracking if this was the live task
-      if (taskId === liveTaskId) {
-        setLiveTaskId(null);
-        clearLiveTaskId();
-      }
+      // Clear live task tracking for this specific task
+      clearLiveTaskId(taskId);
 
       // Show enhanced success message
       const wasRunning = response.data.data.wasRunning;
@@ -724,7 +746,8 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                     getTaskResultsPage={getTaskResultsPage}
                     formatTimestamp={formatTimestamp}
                     setTaskResultPage={setTaskResultPage}
-                    liveTaskId={liveTaskId}
+                    taskUpdates={allTaskUpdates}
+                    taskResults={allLiveResults}
                     onOpenDialog={(task) => {
                       // Open task results dialog
                       
@@ -761,7 +784,8 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                     getTaskResultsPage={getTaskResultsPage}
                     formatTimestamp={formatTimestamp}
                     setTaskResultPage={setTaskResultPage}
-                    liveTaskId={liveTaskId}
+                    taskUpdates={allTaskUpdates}
+                    taskResults={allLiveResults}
                     onOpenDialog={(task) => {
                       // Open task results dialog
                       
@@ -927,10 +951,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                           [task.id]: !prev[task.id]
                         }));
                         
-                        // If expanding and this is the live task, show "View Live Results" option
-                        if (!expandedResults[task.id] && task.id === liveTaskId) {
-                          toast.success('Live results are updating in real-time!');
-                        }
+                        // Live results are visible when expanding
                       }}
                       className="flex items-center px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
                     >
@@ -942,7 +963,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                       ) : (
                         <>
                           <ChevronDown className="h-4 w-4 mr-1" />
-                          View Live Results {task.id === liveTaskId && <span className="ml-1 text-xs bg-green-200 text-green-800 px-1 rounded">LIVE</span>}
+                          View Live Results {isTaskCurrentlyTracked(task.id) && <span className="ml-1 text-xs bg-green-200 text-green-800 px-1 rounded">LIVE</span>}
                         </>
                       )}
                     </button>
@@ -950,7 +971,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                 )}
 
                 {/* Live Results for Running Tasks */}
-                {task.status === 'running' && task.type === 'search' && (liveResults.length > 0 || (task.result && task.result.results && task.result.results.length > 0)) && expandedResults[task.id] && (
+                {task.status === 'running' && task.type === 'search' && (getTaskLiveResults(task.id).length > 0 || (task.result && task.result.results && task.result.results.length > 0)) && expandedResults[task.id] && (
                   <div className="mt-4 border-t pt-4">
                     <div className="mb-3">
                       <h5 className="text-sm font-medium text-gray-900 flex items-center">
@@ -960,14 +981,14 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                     </div>
                     
                     {/* Live Results Status */}
-                    {task.id === liveTaskId && (
+                    {isTaskCurrentlyTracked(task.id) && (
                       <div className="mb-3 p-2 bg-green-100 border border-green-300 rounded-lg">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium text-green-800">
                             🔴 Live Results Streaming
                           </span>
                           <span className="text-xs text-green-600">
-                            {liveResults.length} results received so far
+                            {getTaskLiveResults(task.id).length} results received so far
                           </span>
                         </div>
                       </div>
@@ -975,14 +996,14 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                     
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {/* Show live results first if available */}
-                      {liveResults.length > 0 && task.id === liveTaskId && (
+                      {getTaskLiveResults(task.id).length > 0 && isTaskCurrentlyTracked(task.id) && (
                         <>
-                          {liveResults.slice(-5).map((result, index) => (
+                          {getTaskLiveResults(task.id).slice(-5).map((result, index) => (
                             <div key={`live-${index}`} className="border border-green-200 rounded-lg p-3 bg-green-50 shadow-sm">
                               <div className="flex items-start justify-between mb-2">
                                 <h6 className="text-sm font-medium text-gray-900 flex items-center">
                                   <FileText className="h-4 w-4 mr-2 text-green-500" />
-                                  {result.title || `Live Result ${liveResults.length - 5 + index + 1}`}
+                                  {result.title || `Live Result ${getTaskLiveResults(task.id).length - 5 + index + 1}`}
                                   <span className="ml-2 text-xs bg-green-200 text-green-800 px-1 rounded">NEW</span>
                                 </h6>
                                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
@@ -1040,12 +1061,12 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                       {/* Total count indicator */}
                       <div className="text-center py-2 text-sm bg-blue-50 border border-blue-200 rounded-lg">
                         <span className="font-medium">
-                          {task.id === liveTaskId 
-                            ? `${liveResults.length} live results` 
+                          {isTaskCurrentlyTracked(task.id) 
+                            ? `${getTaskLiveResults(task.id).length} live results` 
                             : `${task.result?.results?.length || 0} cached results`
                           }
                         </span>
-                        {task.id === liveTaskId && !liveIsCompleted && (
+                        {isTaskCurrentlyTracked(task.id) && !getTaskLiveData(task.id).isCompleted && (
                           <div className="text-xs text-blue-600 mt-1 animate-pulse">
                             More results loading...
                           </div>
@@ -1094,7 +1115,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                         <span>{formatTimestamp(task.created)}</span>
                         <span>{formatDuration(task.started, task.completed)}</span>
                         {/* View Results Buttons for Running, Completed, and Cancelled Tasks */}
-                        {task.result && task.type === 'search' && (task.result.results?.length > 0 || task.id === liveTaskId || task.result.saved) && (task.status === 'running' || task.status === 'completed' || task.status === 'failed') && (
+                        {task.result && task.type === 'search' && (task.result.results?.length > 0 || isTaskCurrentlyTracked(task.id) || task.result.saved) && (task.status === 'running' || task.status === 'completed' || task.status === 'failed') && (
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1103,7 +1124,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                             }}
                             className={`px-4 py-2 text-sm rounded-full hover:bg-opacity-80 transition-colors flex items-center space-x-2 font-medium shadow-sm border ${
                               task.status === 'running'
-                                ? (task.id === liveTaskId
+                                ? (isTaskCurrentlyTracked(task.id)
                                     ? 'bg-green-100 text-green-700 border-green-200'
                                     : 'bg-orange-100 text-orange-700 border-orange-200')
                                 : task.status === 'failed' && task.result?.saved
@@ -1116,7 +1137,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                             <Eye className="h-4 w-4" />
                             <span>
                               {task.status === 'running' 
-                                ? (task.id === liveTaskId ? 'View Live Results' : 'View Live Preview')
+                                ? (isTaskCurrentlyTracked(task.id) ? 'View Live Results' : 'View Live Preview')
                                 : task.status === 'failed' && task.result?.saved
                                 ? 'View Saved Results' 
                                 : task.status === 'failed'
@@ -1126,7 +1147,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                             </span>
                             <span className={`px-2 py-1 rounded-full text-xs ${
                               task.status === 'running'
-                                ? (task.id === liveTaskId ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800')
+                                ? (isTaskCurrentlyTracked(task.id) ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800')
                                 : task.status === 'failed' && task.result?.saved
                                 ? 'bg-yellow-200 text-yellow-800'
                                 : task.status === 'failed'
@@ -1134,7 +1155,7 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
                                 : 'bg-blue-200 text-blue-800'
                             }`}>
                               {task.result.total || task.result.results?.length || 0}
-                              {task.status === 'running' && task.id === liveTaskId && (
+                              {task.status === 'running' && isTaskCurrentlyTracked(task.id) && (
                                 <span className="ml-1 animate-pulse">🔴</span>
                               )}
                             </span>
@@ -1210,9 +1231,9 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
           setSelectedTaskForResults(null);
         }}
         task={selectedTaskForResults}
-        liveResults={selectedTaskForResults?.id === liveTaskId ? liveResults : []}
-        liveProgress={selectedTaskForResults?.id === liveTaskId ? liveProgress : 0}
-        liveOperation={selectedTaskForResults?.id === liveTaskId ? liveOperation : ''}
+        liveResults={allLiveResults[selectedTaskForResults?.id] || []}
+        liveProgress={getTaskUpdate(selectedTaskForResults?.id).progress || 0}
+        liveOperation={getTaskUpdate(selectedTaskForResults?.id).operation || ''}
       />
 
     </div>

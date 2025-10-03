@@ -13,7 +13,7 @@ export const useTaskPersistence = (socket, connected, tasks) => {
       const savedLiveTaskId = taskStateManager.getLiveTaskId();
       
       if (runningTasks.length > 0) {
-        console.log('Restoring running tasks on page refresh:', runningTasks);
+        // Restoring running tasks on page refresh
         // Tasks will be merged with fetched tasks by parent component
         
         // Show notification to user
@@ -32,14 +32,14 @@ export const useTaskPersistence = (socket, connected, tasks) => {
       const taskIdsToResubscribe = taskStateManager.getTaskIdsToResubscribeTo();
       
       if (taskIdsToResubscribe.length > 0) {
-        console.log('Auto-resubscribing to running tasks:', taskIdsToResubscribe);
+        // Auto-resubscribing to running tasks
         
         taskIdsToResubscribe.forEach(taskId => {
           if (!resubscribedTasks.has(taskId)) {
             socket.emit('subscribe_to_task', taskId);
             setResubscribedTasks(prev => new Set([...prev, taskId]));
             
-            console.log(`Auto-resubscribed to task: ${taskId}`);
+            // Auto-resubscribed to task
           }
         });
         

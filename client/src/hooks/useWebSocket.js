@@ -149,7 +149,7 @@ export const useTaskSubscription = (socket, taskId) => {
     };
 
     const handleTaskStatus = (data) => {
-      console.log('Task status response:', data);
+      // Task status response
       if (data.task) {
         setTaskData(data.task);
         setProgress(data.task.progress || 0);
@@ -202,7 +202,7 @@ export const useTaskSubscription = (socket, taskId) => {
   // Auto-resubscribe when socket reconnects
   useEffect(() => {
     if (socket && taskId && socket.connected && !liveResults.length && taskData === null) {
-      console.log('Auto-resubscribing to task after reconnection:', taskId);
+      // Auto-resubscribing to task after reconnection
       subscribeToTask();
     }
   }, [socket?.connected, taskId, liveResults.length, taskData, subscribeToTask]);
