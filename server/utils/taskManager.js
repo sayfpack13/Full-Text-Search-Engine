@@ -14,7 +14,7 @@ class TaskManager {
     this.initializePersistence();
     
     // Tasks persist forever - no automatic cleanup
-    console.log('TaskManager: Tasks will persist indefinitely (no automatic cleanup)');
+    // TaskManager initialized - tasks persist indefinitely
   }
 
   async initializePersistence() {
@@ -25,7 +25,7 @@ class TaskManager {
       // Load existing tasks from disk
       await this.loadTasksFromDisk();
       
-      console.log(`TaskManager: Loaded ${this.tasks.size} tasks from disk`);
+      // Loaded tasks from disk
     } catch (error) {
       console.error('TaskManager persistence initialization failed:', error);
     }
@@ -48,7 +48,7 @@ class TaskManager {
         this.tasks.set(id, task);
       }
       
-      console.log(`Loaded ${this.tasks.size} tasks from ${this.tasksFile}`);
+      // Tasks loaded successfully
     } catch (error) {
       if (error.code !== 'ENOENT') {
         console.error('Error loading tasks from disk:', error);
@@ -66,7 +66,7 @@ class TaskManager {
       };
       
       await fs.writeFile(this.tasksFile, JSON.stringify(taskData, null, 2));
-      console.log(`Saved ${this.tasks.size} tasks to ${this.tasksFile}`);
+      // Tasks saved to disk
     } catch (error) {
       console.error('Error saving tasks to disk:', error);
     }
@@ -149,7 +149,7 @@ class TaskManager {
     if (success) {
       // Save to disk asynchronously
       await this.saveTasksToDisk();
-      console.log(`TaskManager: Deleted task ${taskId}`);
+      // Task deleted
     }
     return success;
   }
@@ -163,7 +163,7 @@ class TaskManager {
     
     // Save to disk asynchronously
     await this.saveTasksToDisk();
-    console.log(`TaskManager: Deleted all ${taskCount} tasks`);
+    // All tasks deleted
     return taskCount;
   }
 

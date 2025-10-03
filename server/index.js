@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const path = require('path');
 const cron = require('node-cron');
 const winston = require('winston');
+const http = require('http');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -13,8 +14,10 @@ const { authenticateAdmin } = require('./middleware/auth');
 const { runBackgroundTasks } = require('./services/backgroundTasks');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const rustEngine = require('./utils/rustEngine');
+const websocketService = require('./services/websocketService');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5007;
 
 // Configure logger
@@ -54,6 +57,9 @@ if (!fs.existsSync('logs')) {
 // Import task routes
 const taskRoutes = require('./routes/tasks');
 
+// Initialize WebSocket service
+websocketService.initialize(server);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/search', searchRoutes);
@@ -80,7 +86,7 @@ cron.schedule('0 * * * *', () => {
 });
 
 // Start server
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV}`);
   

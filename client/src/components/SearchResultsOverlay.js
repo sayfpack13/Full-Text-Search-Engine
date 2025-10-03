@@ -44,7 +44,7 @@ window.searchResultsActions = {
   },
   
   populateDialogData: async (task, providedResultsData = null) => {
-    console.log('populateDialogData called with task:', task.id);
+    // Populate dialog data
     
     // Update title and subtitle
     const title = document.getElementById('dialog-title');
@@ -52,7 +52,7 @@ window.searchResultsActions = {
     if (title && subtitle) {
       title.textContent = `Search Results`;
       subtitle.textContent = `Query: "${task.params?.query || 'N/A'}"`;
-      console.log('Updated title/subtitle');
+      // Updated title/subtitle
     }
     
     let resultsData = providedResultsData;
@@ -71,7 +71,7 @@ window.searchResultsActions = {
       }
       
       // Always fetch results from backend (no frontend caching)
-      console.log('Loading results for task:', task.id);
+      // Loading results for task
       try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/tasks/${task.id}/results?limit=20&offset=0`, {
@@ -87,7 +87,7 @@ window.searchResultsActions = {
           results: responseData.data.results,
           total: responseData.data.total
         };
-        console.log('Loaded', responseData.data.results.length, 'results');
+        // Results loaded
       } else {
         throw new Error(responseData.error || 'Failed to load results');
       }
@@ -111,14 +111,7 @@ window.searchResultsActions = {
       window.searchResultsState.pagination.totalResults / window.searchResultsState.pagination.pageSize
     );
     
-    console.log('Pagination debug:', {
-      'resultsData.total': resultsData.total,
-      'resultsData.results?.length': resultsData.results?.length,
-      'totalResults': window.searchResultsState.pagination.totalResults,
-      'totalPages': window.searchResultsState.pagination.totalPages,
-      'currentPage': window.searchResultsState.pagination.currentPage,
-      'pageSize': window.searchResultsState.pagination.pageSize
-    });
+    // Pagination debug info collected
     
     
     // Update stats cards
@@ -159,7 +152,7 @@ window.searchResultsActions = {
           <div style="font-size: 14px; opacity: 0.9;">Duration</div>
         </div>
       `;
-      console.log('Updated stats cards:', resultsData.total || 0, 'total results,', resultsData.filesSearched || 0, 'files');
+      // Updated stats cards
     }
     
     // Update results with pagination
@@ -255,7 +248,7 @@ window.searchResultsActions = {
         </div>
         `).join('');
       
-      console.log('Updated results container with', results.length, 'results (page', currentPage, 'of', Math.ceil(totalResults / pageSize), ')');
+      // Updated results container
       
       // Update pagination controls
       if (paginationContainer) {
@@ -434,7 +427,7 @@ window.searchResultsActions = {
         
         // Update only the results content and pagination, don't regenerate entire dialog
         await window.searchResultsActions.updatePageResults(responseData.data, task);
-        console.log(`Loaded page ${page}:`, responseData.data.results.length, 'results');
+        // Page results loaded
       } else {
         throw new Error(responseData.error || 'Failed to load page');
       }
@@ -835,15 +828,7 @@ if (typeof window !== 'undefined') {
   const debugButton = document.getElementById('debug-test');
   if (debugButton) {
     debugButton.addEventListener('click', () => {
-      console.log('=== DIALOG DEBUG INFO ===');
-      console.log('Global state:', window.searchResultsState);
-      console.log('Current task:', window.searchResultsState.task);
-      console.log('Dialog DOM elements exist:', {
-        backdrop: !!document.getElementById('search-results-backdrop'),
-        dialog: !!document.getElementById('search-results-dialog'),
-        resultsContainer: !!document.getElementById('results-container'),
-        statsContainer: !!document.getElementById('stats-container')
-      });
+      // Debug info available
       
       // Test manual data injection
       const testTask = {

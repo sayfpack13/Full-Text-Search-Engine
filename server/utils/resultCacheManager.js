@@ -18,7 +18,7 @@ class ResultCacheManager {
   async initializeCache() {
     try {
       await fs.mkdir(this.cacheDir, { recursive: true });
-      console.log('ResultCacheManager: Cache directory initialized');
+      // Cache directory initialized
     } catch (error) {
       console.error('ResultCacheManager initialization failed:', error);
     }
@@ -39,6 +39,122 @@ class ResultCacheManager {
   generateBaseCacheKey(query) {
     const normalizedQuery = query.trim().toLowerCase();
     return crypto.createHash('md5').update(normalizedQuery).digest('hex');
+  }
+
+  /**
+   * Initialize progressive saving for a running task
+   * @param {string} query - Search query
+   * @param {string} taskId - Task ID for unique file naming
+   * @returns {string} - Path to results file
+   */
+  async initializeProgressiveResults(query, taskId) {
+    try {
+      const sanitizedQuery = query.trim().replace(/[<>:"/\\|?*]/g, '_');
+      const filePath = path.join(this.cacheDir, `${sanitizedQuery}_${taskId}_running.txt`);
+      
+      // Create cache directory if it doesn't exist
+      await fs.mkdir(this.cacheDir, { recursive: true });
+      
+      // Initialize file with header
+      let content = `Search Results for Query: "${query.trim()}"\n`;
+      content += `Status: RUNNING\n`;
+      content += `Started At: ${new Date().toISOString()}\n`;
+      content += `${'='.repeat(80)}\n\n`;
+      
+      // Save initial file
+      await fs.writeFile(filePath, content, 'utf8');
+      
+      // Initialized progressive results file for task
+      return filePath;
+      
+    } catch (error) {
+      console.error('Failed to initialize progressive results:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Append new results to the progressive results file
+   * @param {string} taskId - Task ID to find the results file
+   * @param {Array} newResults - New results to append
+   * @returns {string|null} - Path to file if successful, null if not found
+   */
+  async appendProgressiveResults(taskId, newResults) {
+    try {
+      // Find the running results file for this task
+      const files = await fs.readdir(this.cacheDir);
+      const taskFile = files.find(file => file.includes(`${taskId}_running.txt`));
+      
+      if (!taskFile) {
+        // Progressive results file not found for task
+        return null;
+      }
+      
+      const filePath = path.join(this.cacheDir, taskFile);
+      
+      // Append new results
+      let content = '';
+      newResults.forEach((result, index) => {
+        content += `Result (Progressive) ${Date.now()}-${index}:\n`;
+        content += `File: ${result.path}\n`;
+        content += `Line: ${result.line_number}\n`;
+        content += `Score: ${result.score}\n`;
+        content += `Content: ${result.content}\n`;
+        content += `Found At: ${new Date().toISOString()}\n`;
+        content += `Status: LIVE\n`;
+        content += `${'-'.repeat(40)}\n\n`;
+      });
+      
+      // Append to file
+      await fs.appendFile(filePath, content, 'utf8');
+      
+      // Appended progressive results for task
+      return filePath;
+      
+    } catch (error) {
+      console.error('Failed to append progressive results:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Finalize progressive results file when task completes
+   * @param {string} taskId - Task ID to finalize
+   * @param {number} totalResults - Total number of results found
+   * @returns {string|null} - Path to finalized file
+   */
+  async finalizeProgressiveResults(taskId, totalResults) {
+    try {
+      // Find the running results file for this task
+      const files = await fs.readdir(this.cacheDir);
+      const taskFile = files.find(file => file.includes(`${taskId}_running.txt`));
+      
+      if (!taskFile) {
+        // Progressive results file not found for task
+        return null;
+      }
+      
+      const runningFilePath = path.join(this.cacheDir, taskFile);
+      const finalFilePath = path.join(this.cacheDir, taskFile.replace('_running.txt', '.txt'));
+      
+      // Update header with final information
+      let content = await fs.readFile(runningFilePath, 'utf8');
+      content += `\n\n${'='.repeat(80)}\n`;
+      content += `FINAL STATUS: COMPLETED\n`;
+      content += `Total Results: ${totalResults}\n`;
+      content += `Completed At: ${new Date().toISOString()}\n`;
+      
+      // Save as final file and remove running file
+      await fs.writeFile(finalFilePath, content, 'utf8');
+      await fs.unlink(runningFilePath);
+      
+      // Finalized progressive results file for task
+      return finalFilePath;
+      
+    } catch (error) {
+      console.error('Failed to finalize progressive results:', error);
+      throw error;
+    }
   }
 
   /**
@@ -77,13 +193,93 @@ class ResultCacheManager {
       // Save to text file
       await fs.writeFile(filePath, content, 'utf8');
       
-      console.log(`Saved ${total} results for query "${query}" to ${fileName}`);
+      // Saved results for query to cache file
       
       return filePath;
       
     } catch (error) {
       console.error('Failed to save results to text file:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Load progressive results from running task file
+   * @param {string} taskId - Task ID to find the progressive results file
+   * @param {number} limit - Number of results to return
+   * @param {number} offset - Starting offset
+   * @returns {Object|null} - Results or null if not found
+   */
+  async loadProgressiveResults(taskId, limit = 50, offset = 0) {
+    try {
+      // Look for running task file
+      const files = await fs.readdir(this.cacheDir);
+      const taskFile = files.find(file => file.includes(`${taskId}_running.txt`));
+      
+      if (!taskFile) {
+        return null;
+      }
+      
+      const filePath = path.join(this.cacheDir, taskFile);
+      const content = await fs.readFile(filePath, 'utf8');
+      
+      // Parse progressive results
+      const lines = content.split('\n');
+      const results = [];
+      
+      let resultIndex = 0;
+      let currentResult = {};
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        if (line.startsWith('Result (Progressive)')) {
+          if (currentResult.path) {
+            results.push(currentResult);
+          }
+          currentResult = {
+            id: `progressive_${taskId}_${resultIndex}`,
+            title: '',
+            content: '',
+            score: 0,
+            path: '',
+            line_number: 0,
+            indexed_at: new Date().toISOString(),
+            progressive: true
+          };
+          resultIndex++;
+        } else if (line.startsWith('File: ')) {
+          currentResult.path = line.replace('File: ', '');
+          currentResult.title = `${currentResult.path.split('/').pop()} (Progressive)`;
+        } else if (line.startsWith('Line: ')) {
+          currentResult.line_number = parseInt(line.replace('Line: ', ''));
+        } else if (line.startsWith('Score: ')) {
+          currentResult.score = parseFloat(line.replace('Score: ', ''));
+        } else if (line.startsWith('Content: ')) {
+          currentResult.content = line.replace('Content: ', '');
+        }
+      }
+      
+      // Add the last result
+      if (currentResult.path) {
+        results.push(currentResult);
+      }
+      
+      // Apply pagination
+      const paginatedResults = results.slice(offset, offset + limit);
+      
+      // Loaded progressive results for task
+      
+      return {
+        results: paginatedResults,
+        total: results.length,
+        sourceFile: filePath,
+        progressive: true
+      };
+      
+    } catch (error) {
+      console.error('Failed to load progressive results:', error);
+      return null;
     }
   }
 
