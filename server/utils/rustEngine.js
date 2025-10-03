@@ -316,9 +316,6 @@ class RustEngine {
     return this.executeCommand('status');
   }
 
-  async indexDocument(filePath) {
-    return this.executeCommand('index', [filePath]);
-  }
 
 
   async runMaintenance(task) {

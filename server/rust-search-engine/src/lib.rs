@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use tokio::fs as async_fs;
-use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -26,21 +25,13 @@ pub struct SearchResponse {
     pub offset: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IndexResult {
-    pub success: bool,
-    pub document_id: String,
-    pub path: String,
-    pub indexed_at: DateTime<Utc>,
-    pub message: String,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Stats {
     pub total_documents: usize,
     pub index_size_bytes: u64,
     pub last_updated: DateTime<Utc>,
-    pub index_path: String,
+    pub search_path: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,7 +87,7 @@ impl SearchEngine {
                 .filter(|e| e.file_type().is_file())
                 .filter(|e| {
                     e.path().extension()
-                        .map(|ext| ext == "txt")
+                        .map(|ext| ext.to_string_lossy().to_lowercase() == "txt")
                         .unwrap_or(false)
                 }) {
                 self.cached_files.push(entry.path().to_path_buf());
@@ -107,37 +98,6 @@ impl SearchEngine {
         Ok(())
     }
 
-    pub async fn index_document(&mut self, file_path: &str) -> Result<IndexResult> {
-        let path = Path::new(file_path);
-        
-        if !path.exists() {
-            return Ok(IndexResult {
-                success: false,
-                document_id: String::new(),
-                path: file_path.to_string(),
-                indexed_at: Utc::now(),
-                message: "File does not exist".to_string(),
-            });
-        }
-
-        // Copy file if it's not already in our search directory
-        let dest_path = self.search_path.join(path.file_name().unwrap_or_default());
-        
-        if path != dest_path {
-            async_fs::copy(path, &dest_path).await
-                .context("Failed to copy file")?;
-        }
-
-        self.refresh_file_cache().await?;
-
-        Ok(IndexResult {
-            success: true,
-            document_id: Uuid::new_v4().to_string(),
-            path: file_path.to_string(),
-            indexed_at: Utc::now(),
-            message: "File added to search directory".to_string(),
-        })
-    }
 
     pub async fn search(&self, query: &str, limit: usize, offset: usize) -> Result<SearchResponse> {
         let mut results = Vec::new();
@@ -249,7 +209,7 @@ impl SearchEngine {
             total_documents: self.cached_files.len(),
             index_size_bytes: total_size,
             last_updated: self.last_scanned,
-            index_path: self.search_path.to_string_lossy().to_string(),
+            search_path: self.search_path.to_string_lossy().to_string(),
         })
     }
 

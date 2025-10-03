@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use search_engine::SearchEngine;
-use std::path::Path;
-use log::{info, error};
+use log::info;
 
 #[derive(Parser)]
 #[command(name = "search-engine")]
@@ -13,11 +12,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Index a document
-    Index {
-        /// Path to the document to index
-        path: String,
-    },
     /// Search for documents
     Search {
         /// Search query
@@ -49,11 +43,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut engine = SearchEngine::new(&search_dir).await?;
 
     match cli.command {
-        Commands::Index { path } => {
-            info!("Indexing document: {}", path);
-            let result = engine.index_document(&path).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
-        }
         Commands::Search { query, limit, offset } => {
             info!("Searching for: {}", query);
             let results = engine.search(&query, limit, offset).await?;
