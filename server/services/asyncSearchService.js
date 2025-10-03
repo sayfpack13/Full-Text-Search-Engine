@@ -78,7 +78,7 @@ class AsyncSearchService {
 
       // Execute search to get ALL results (not paginated) for saving
       logger.info(`Executing full search for saving: "${query}"`);
-      const allResults = await rustEngine.search(query.trim(), 10000, 0); // Get up to 10k results
+      const allResults = await rustEngine.search(query.trim(), 100000, 0); // Get up to 100k results for large files
 
       // Clear progress interval if it was set
       if (progressInterval) {

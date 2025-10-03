@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use tokio::fs as async_fs;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -103,17 +104,32 @@ impl SearchEngine {
         let mut results = Vec::new();
         let query_lower = query.to_lowercase();
         
+        // Pre-calculate how many results we need to collect for efficient memory usage
+        let target_results = offset + limit;
+        let early_stop_threshold = if target_results > 10000 {
+            target_results + 20000 // For large result sets, collect a reasonable amount extra
+        } else {
+            target_results * 3 // For smaller sets, use 3x multiplier
+        };
+        
         for (file_idx, file_path) in self.cached_files.iter().enumerate() {
-            match self.search_in_file(file_path, &query_lower).await {
+            match self.search_in_file_progressive(file_path, &query_lower, early_stop_threshold).await {
                 Ok(file_results) => {
-                    results.extend(file_results.into_iter().map(|mut result| {
-                        result.id = format!("{}-{}", file_idx, result.line_number);
-                        result
-                    }));
+                    if !file_results.is_empty() {
+                        results.extend(file_results.into_iter().map(|mut result| {
+                            result.id = format!("{}-{}", file_idx, result.line_number);
+                            result
+                        }));
+                    }
                 }
                 Err(e) => {
                     eprintln!("Failed to search file {:?}: {}", file_path, e);
                 }
+            }
+            
+            // Early termination if we have enough results for sorting
+            if results.len() >= early_stop_threshold {
+                break;
             }
         }
 
@@ -136,34 +152,47 @@ impl SearchEngine {
         })
     }
 
-    async fn search_in_file(&self, file_path: &Path, query: &str) -> Result<Vec<SearchResult>> {
+
+    async fn search_in_file_progressive(&self, file_path: &Path, query: &str, max_results: usize) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
         let file_path_str = file_path.to_string_lossy().to_string();
         
-        let content = async_fs::read_to_string(file_path).await
-            .context("Failed to read file")?;
+        // Open file and create buffered reader for streaming large files
+        let file = async_fs::File::open(file_path).await
+            .context("Failed to open file")?;
         
-        for (line_number, line) in content.lines().enumerate() {
-            let line_lower = line.to_lowercase();
+        // Use larger buffer for massive log files (4MB buffer)
+        let reader = BufReader::with_capacity(4 * 1024 * 1024, file);
+        let mut lines = reader.lines();
+        
+        let filename = file_path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        
+        let mut line_number = 0;
+        while let Some(line_result) = lines.next_line().await? {
+            line_number += 1;
+            let line_lower = line_result.to_lowercase();
             
             // Direct substring match
             if line_lower.contains(query) {
                 let score = self.calculate_score(&line_lower, query);
                 
-                let filename = file_path.file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string();
-                
                 results.push(SearchResult {
                     id: String::new(), // Will be set later
-                    title: format!("{} (line {})", filename, line_number + 1),
-                    content: line.to_string(),
+                    title: format!("{} (line {})", filename, line_number),
+                    content: line_result,
                     score,
                     path: file_path_str.clone(),
                     line_number: line_number as i64,
                     indexed_at: Utc::now(),
                 });
+                
+                // Early termination within file if we have enough matches
+                if results.len() >= max_results {
+                    break;
+                }
             }
         }
         

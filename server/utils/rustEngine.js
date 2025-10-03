@@ -305,7 +305,8 @@ class RustEngine {
   }
 
   async search(query, limit = 10, offset = 0) {
-    return this.executeCommand('search', [query, '--limit', limit.toString(), '--offset', offset.toString()]);
+    // Use very long timeout for large file searches (1 hour for massive log files)
+    return this.executeCommand('search', [query, '--limit', limit.toString(), '--offset', offset.toString()], 3600000);
   }
 
   async getStats() {
