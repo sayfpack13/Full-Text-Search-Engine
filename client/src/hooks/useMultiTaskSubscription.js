@@ -11,7 +11,18 @@ export const useMultiTaskSubscription = (socket, runningTaskIds = []) => {
 
   // Incremental subscription management - only subscribe/unsubscribe when tasks change
   useEffect(() => {
-    if (!socket || !socket.connected) return;
+    if (!socket) {
+      console.log('❌ Multi-task: No socket available');
+      return;
+    }
+    if (!socket.connected) {
+      console.log('❌ Multi-task: Socket not connected');
+      return;
+    }
+    if (runningTaskIds.length === 0) {
+      console.log('📝 Multi-task: No running tasks to subscribe to');
+      return;
+    }
 
     const currentSubscriptions = new Set(runningTaskIds);
     const newTasks = runningTaskIds.filter(taskId => !subscribedTasks.has(taskId));
@@ -19,9 +30,10 @@ export const useMultiTaskSubscription = (socket, runningTaskIds = []) => {
 
     // Subscribe to new tasks
     if (newTasks.length > 0) {
-      // Subscribing to new tasks
+      console.log('🔄 Multi-task: Subscribing to new tasks:', newTasks);
       newTasks.forEach(taskId => {
         socket.emit('subscribe_to_task', taskId);
+        console.log(`✅ Subscribed to task: ${taskId}`);
       });
     }
 

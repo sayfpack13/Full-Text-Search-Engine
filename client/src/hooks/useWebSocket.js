@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
-export const useWebSocket = (url = 'http://localhost:5007') => {
+export const useWebSocket = (url = process.env.REACT_APP_WEBSOCKET_URL || 'http://localhost:5007') => {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
@@ -10,6 +10,8 @@ export const useWebSocket = (url = 'http://localhost:5007') => {
   const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
+    console.log('🔌 Initializing WebSocket connection to:', url);
+    
     // Initialize socket connection
     const newSocket = io(url, {
       transports: ['websocket', 'polling'],
@@ -17,19 +19,22 @@ export const useWebSocket = (url = 'http://localhost:5007') => {
       rememberUpgrade: true,
       timeout: 20000,
       reconnection: true,
-      reconnectionDelay: 2000,
+      reclassificationDelay: 2000,
       reconnectionAttempts: maxReconnectAttempts,
+      forceNew: true // Force new connection
     });
 
     // Connection event handlers
     newSocket.on('connect', () => {
-        // WebSocket connected
+      console.log('✅ WebSocket connected successfully');
+      // WebSocket connected
       setConnected(true);
       setConnectionError(null);
       reconnectAttempts.current = 0;
     });
 
     newSocket.on('disconnect', (reason) => {
+      console.log('🔌 WebSocket disconnected:', reason);
       // WebSocket disconnected
       setConnected(false);
       if (reason === 'io server disconnect') {

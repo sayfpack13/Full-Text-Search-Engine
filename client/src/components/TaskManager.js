@@ -133,7 +133,7 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
                   ? 'bg-gray-200 text-gray-600'
                   : 'bg-blue-200 text-blue-800'
               }`}>
-                {isCurrentlyTracked && liveData.resultsCount ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)}
+                {isCurrentlyTracked && liveData.resultsCount !== undefined ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)}
                 {isCurrentlyTracked && task.status === 'running' && (
                   <span className="ml-1 animate-pulse">🔴</span>
                 )}
@@ -156,7 +156,7 @@ const CompactTaskCard = ({ task, onCancel, onDelete, resultPages, getTaskResults
             <div className="flex items-center space-x-2">
               <TrendingUp className="h-3 w-3 text-green-500" />
               <span className="text-gray-600">
-                {isCurrentlyTracked && liveData.resultsCount ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)} matches found
+                {isCurrentlyTracked && liveData.resultsCount !== undefined ? liveData.resultsCount : (task.result.total || task.result.resultsFound || task.result.results?.length || 0)} matches found
                 {isCurrentlyTracked && task.status === 'running' && (
                   <span className="ml-1 text-xs text-green-600 animate-pulse">🔴 LIVE</span>
                 )}
@@ -283,6 +283,11 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
   // WebSocket connection
   const { socket, connected } = useWebSocket();
   
+  // Debug WebSocket connection status
+  useEffect(() => {
+    console.log('🌐 WebSocket connection status:', { connected, socketAvailable: !!socket });
+  }, [connected, socket]);
+  
   // Task persistence and auto-resubscription
   const {
     hasRestoredTasks,
@@ -303,6 +308,16 @@ const TaskManager = ({ onTaskUpdate, compact = false }) => {
     getTaskResults,
     isTaskTracked
   } = useMultiTaskSubscription(socket, runningTaskIds);
+  
+  // Debug multi-task subscription
+  useEffect(() => {
+    console.log('📡 Multi-task subscription:', { 
+      multiTaskConnected, 
+      runningTasks: runningTaskIds.length,
+      subscribedTasks: Object.keys(allTaskUpdates).length,
+      taskUpdates: Object.keys(allTaskUpdates)
+    });
+  }, [multiTaskConnected, runningTaskIds.length, allTaskUpdates]);
   
 
   useEffect(() => {
