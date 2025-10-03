@@ -94,7 +94,38 @@ console.log('✅ WebSocket connected successfully');
 console.log('🔄 Multi-task: Subscribing to new tasks:', newTasks);
 ```
 
-## 6. Firewall Configuration
+## 6. Apache2 Configuration Fix
+
+If your frontend tries to connect to `ws://localhost:5007` instead of proxying through Apache2:
+
+**Problem:** Missing environment variable and wrong DocumentRoot
+
+**Solution:**
+1. Create `client/.env.production`:
+```bash
+echo "REACT_APP_WEBSOCKET_URL=https://rengine.sayfaio.com" > client/.env.production
+```
+
+2. Update Apache2 DocumentRoot from:
+```apache
+DocumentRoot "/var/www/Full-Text-Search-Engine"
+```
+To:
+```apache
+DocumentRoot "/var/www/Full-Text-Search-Engine/client/build"
+```
+
+3. Rebuild frontend:
+```bash
+cd client && npm run build
+```
+
+4. Reload Apache2:
+```bash
+sudo systemctl reload apache2
+```
+
+## 7. Firewall Configuration
 
 If using Ubuntu with firewall:
 ```bash
