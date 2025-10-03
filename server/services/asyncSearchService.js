@@ -260,10 +260,10 @@ class AsyncSearchService {
         totalFound += batchResults.results.length;
         currentOffset += batchSize;
         
-        // Update total and capture stats from first batch
-        if (currentOffset === offset + batchSize) {
+        // Update total and capture stats from first batch or whenever stats are available
+        if (currentOffset === offset + batchSize || searchStats === null) {
           totalFound = batchResults.total || batchResults.length;
-          searchStats = batchResults.stats; // Capture stats from search results
+          searchStats = batchResults.stats || searchStats; // Capture stats from search results
         }
         
           // Broadcast results as they're found
@@ -337,7 +337,7 @@ class AsyncSearchService {
         total: totalFound,
         limit: offset + totalFound,
         offset,
-        stats: searchStats
+        stats: searchStats || { total_documents: 1 }
       };
       
     } catch (error) {
